@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans">
+<head>
+	<meta charset="utf-8">
+	<title>实时聊天系统</title>
+</head>
+<style>
+	.userPage {
+		display: none;
+	}
+	.chatPage{
+		display: none;
+	}
+	#videos div{
+		float: left;
+		width: 50%;
+		height: auto;
+		border: 2px solid black;
+		box-sizing: border-box;
+	}
+	#videos video{
+		width: 100%;
+	}
+	#messages {
+		height: 400px;
+		border: 1px solid black;
+		box-sizing: border-box;
+		clear: both;
+		overflow: scroll;
+	}
+	.msg-input {
+		width: 90%;
+	}
+	.my-msg:after ,.other-msg:after{
+		content: '';
+		display: table;
+		clear: both;
+	}
+	.my-msg {
+    	padding-left: 40%;
+    	text-align: right;
+	}
+	.other-msg {
+		padding-right: 40%;
+	}
+	.my-msg .user-tip {
+		float: right;
+	}
+	.other-msg .user-tip {
+		float: left;
+	}
+	.user-tip {
+		padding: 3px 5px;
+	    box-shadow: 0 0 1px 1px black;
+	    border-radius: 5px;
+	    margin: 0 13px;
+	}
+	.message-wrap {
+		overflow: hidden;
+	}
+	.message-wrap span{
+	    box-sizing: border-box;
+	    border-radius: 8px;
+	    padding: 10px;
+	    display: inline-block;
+	    border: 1px solid;
+	    text-align: left;
+	    word-wrap: break-word;
+	    word-break: break-all;
+	}
+</style>
+<body>
+	<div class="loginPage">
+		<input type="text" id="userName" placeholder="用户名">
+		<button id="joinBt">JOIN</button>
+	</div>
+	<ul class="userPage">
+	</ul>
+	<div class="chatPage">
+		<center>聊天室</center>
+	  	<div id="videos">
+	  	</div>
+	  	<div id="messages"></div>
+		<input type="file" class="file-input">
+		<button class="send-file">上传文件</button><br/>
+		<input type="text" class="msg-input">
+		<button class="send-msg">发送消息</button>
+	</div>
+</body>
+<script src="./js/jquery-3.1.0.js"></script>
+<script src="./js/SkyRTC-client.js"></script>
+<script>
+	var $userName = $('#userName')
+	var $joinBt = $('#joinBt')
+	var $loginPage = $('.loginPage')
+	var $userPage = $('.userPage')
+	var $chatPage = $('.chatPage')
+	var userName = undefined;
+	var currentPage = "loginPage"
+
+  	var rtc = SkyRTC();
+  	var rtcVideo = SkyRTC();
+
+  	$(document).on('keydown',function(event){
+	    if(event.keyCode == 13){
+	    	event.preventDefault();
+	    	if(currentPage==="loginPage"){
+				$joinBt.click()	    	
+	   	 	}else if(currentPage==="chatPage"){
+	   	 		$msgBt.click()
+	   	 	}	
+	    }
+	});
+
+	$joinBt.click(function(){
+		userName = $userName.val();
+		rtc.connect("wss:" + window.location.href.substring(window.location.protocol.length).split('/login')[0], "userPage")
+
+	})
+
+	$userPage.click(function(e){
+		var target = e.target
+		if(target.nodeName.toUpperCase()==='LI'){
+			$userPage.hide()
+			$chatPage.show()
+
+			var room = $(target).attr('room')
+			/*location.href="/chat/#"+room*/
+			rtcVideo.connect("wss:" + window.location.href.substring(window.location.protocol.length).split('/login')[0], room);
+		}
+	})
+
+	//连接建立后调用，发送用户名给服务器
+	rtc.on('connected', function(socket){
+		var data = {
+			type: 'login',
+			name: userName
+		}
+		sendMsg(socket, data)
+	})
+
+	//接收websocket信息
+  	rtc.on('socket_receive_message', function(socket, msg){
+     	if(msg.type="login_result"){
+     		users = msg.users
+     		updateUserList(msg.users)
+     		console.log(msg.users);
+     	}
+ 	})
+  	//通过websocket发送信息
+	function sendMsg(socket, data){
+		socket.send(JSON.stringify(data))
+	}
+	function updateUserList(users){
+		if(currentPage==="loginPage"){
+			$loginPage.hide()
+			$userPage.show()
+		}else if(currentPage==="userPage"){
+
+		}else if(currentPage==="chatPage"){
+			
+		}
+		$userPage[0].innerHTML='';
+
+		var socketIds = Object.getOwnPropertyNames(users)
+		for(var i=0; i<socketIds.length; i++){
+			var name = users[socketIds[i]]
+			if(name!==userName){
+				var room = undefined
+				if(userName.localeCompare(name)===1){
+					room = userName+'&'+name
+				}else{
+					room = name+'&'+userName
+				}
+				var li = $('<li>').attr('socketId', socketIds[i]).attr('room',room).text(users[socketIds[i]])
+				$userPage.append(li)
+			}
+		}
+	}
+
+
+	//视屏聊天部分
+	var $videos = $('#videos')
+	var $messages = $('#messages')
+	var $fileInput = $('.file-input')
+	var $fileBt = $('.send-file')
+	var $msgInput = $('.msg-input')
+	var $msgBt = $('.send-msg')
+	var users = null;
+	rtcVideo.on("connected", function(socket) {
+    	//创建本地视频流
+	    rtcVideo.createStream({
+	      "video": true,
+	      "audio": false
+	    });
+
+	    afterCreateStream(rtcVideo)
+
+	    currentPage = "chatPage"
+
+	    var data = {
+			type: 'set_name',
+			name: userName
+		}
+		sendMsg(socket, data)
+  	});
+
+  	function afterCreateStream(rtcVideo){
+		rtcVideo.on('socket_receive_message', function(socket, msg){
+	     	if(msg.type==='set_name_result'){
+	     		users = msg.users
+	     		console.log(msg.users);
+	     	}
+	 	})
+		rtcVideo.on("stream_created", function(stream) {
+			var div = $('<div>')
+	    	var name = $('<center>'+userName+'</center>')
+			var video = $('<video>')
+	    	video.attr('src', URL.createObjectURL(stream));
+	    	video[0].play();
+	    	div.append(name)
+	    	div.append(video)
+	    	$('#videos').append(div)
+	 	});
+	 	rtcVideo.on("stream_create_error", function() {
+	    	alert("create stream failed! 希隆大傻逼");
+	  	});
+	  	rtcVideo.on('pc_add_stream', function(stream, socketId) {
+	    	var div = $('<div>').attr('id',socketId)
+	    	var name = $('<center>'+users[socketId]+'</center>')
+	    	var video = $('<video>')
+	    	video.attr('src', URL.createObjectURL(stream));
+	    	video[0].play();
+	    	div.append(name)
+	    	div.append(video)
+	    	$('#videos').append(div)
+	  	});
+		rtcVideo.on('remove_peer', function(socketId) {
+	    	var video = $('#'+socketId)
+		    if(video){
+		      	video.remove()
+		    }
+	  	});
+
+	  	rtcVideo.on('data_channel_message', function(channel, socketId, msg){
+		    var p = $('<p>')
+		   	p.attr('class','other-msg')
+		   	p.append($('<span class="user-tip">'+users[socketId]+'</span>'))
+        	p.append($('<p class="message-wrap"><span>'+msg+'</span></p>'))
+		    $messages.append(p);
+		});
+
+  	}
+
+	$msgBt.click(function(event){
+	    var msg = $msgInput.val()
+	    if(msg.trim()===''){
+	    	return
+	    }
+	    var p = $('<p>')
+	   	p.attr('class','my-msg')
+	   	p.append($('<span class="user-tip">me</span>'))
+    	p.append($('<p class="message-wrap"><span>'+msg+'</span></p>'))
+	    //广播消息
+	    rtcVideo.broadcast(msg);
+	   	$msgInput.val('')
+	    $messages.append(p);
+  	});
+</script>
+</html>

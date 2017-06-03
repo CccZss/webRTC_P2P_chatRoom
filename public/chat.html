@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans">
+<head>
+	<meta charset="utf-8">
+	<title>CHAT</title>
+</head>
+<style>
+	#videos video{
+		float: left;
+		width: 50%;
+		height: 400px;
+		border: 2px solid black;
+		box-sizing: border-box;
+	}
+	#messages {
+		height: 300px;
+		border: 1px solid black;
+		box-sizing: border-box;
+		clear: both;
+	}
+	.msg-input {
+		width: 90%;
+	}
+</style>
+<body>
+	<center>聊天室</center>
+  	<div id="videos">
+    	<video id="me" autoplay></video>
+  	</div>
+  	<div id="messages"></div>
+	<input type="file" class="file-input">
+	<button class="send-file">上传文件</button><br/>
+	<input type="text" class="msg-input">
+	<button class="send-msg">发送消息</button>
+</body>
+<script src="../js/jquery-3.1.0.js"></script>
+<script src="../js/SkyRTC-client.js"></script>
+<script>
+	var $videos = $('#videos')
+	var $messages = $('#messages')
+	var $fileInput = $('.file-input')
+	var $fileBt = $('.send-file')
+	var $msgInput = $('.msg-input')
+	var $msgBt = $('.send-msg')
+	var users = null;
+
+  	var rtc = SkyRTC();
+
+  	//通过websocket发送信息
+	function sendMsg(socket, data){
+		socket.send(JSON.stringify(data))
+	}
+
+  	rtc.connect("ws:" + window.location.href.substring(window.location.protocol.length).split('/chat')[0], window.location.hash.slice(1));
+
+  	rtc.on('socket_receive_message', function(socket, msg){
+     	if(msg.type==='userList'){
+     		users = msg.users
+     		console.log(msg.users);
+     	}
+ 	})
+
+  	rtc.on("connected", function(socket) {
+    	//创建本地视频流
+	    rtc.createStream({
+	      "video": true,
+	      "audio": false
+	    });
+	    var data = {
+	    	type: 'get_users'
+	    }
+	    sendMsg(socket, data)
+  	});
+	rtc.on("stream_created", function(stream) {
+    	document.getElementById('me').src = URL.createObjectURL(stream);
+    	document.getElementById('me').play();
+ 	});
+	//创建本地视频流失败
+  	rtc.on("stream_create_error", function() {
+
+    	alert("create stream failed!");
+  	});
+  	rtc.on('pc_add_stream', function(stream, socketId) {
+    	var newVideo = document.createElement("video"),
+        	id = "other-" + socketId;
+    	newVideo.setAttribute("class", "other");
+    	newVideo.setAttribute("autoplay", "autoplay");
+    	newVideo.setAttribute("id", id);
+    	videos.appendChild(newVideo);
+    	rtc.attachStream(stream, id);
+  	});
+	rtc.on('remove_peer', function(socketId) {
+    	var video = document.getElementById('other-' + socketId);
+	    if(video){
+	      	video.parentNode.removeChild(video);
+	    }
+  	});
+
+  	rtc.on('data_channel_message', function(channel, socketId, message){
+	    var p = document.createElement("p");
+	    p.innerText = socketId + ": " + message;
+	    $messages.append(p);
+	});
+
+	$msgBt.click(function(event){
+	    var msg = $msgInput.val(),
+    	p = $('<p>').text("me: " + msg)
+	    //广播消息
+	    rtc.broadcast(msg);
+	   	$msgInput.val('')
+	    $messages.append(p);
+  	});
+</script>
+</html>
